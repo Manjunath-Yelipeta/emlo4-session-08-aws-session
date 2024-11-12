@@ -1,5 +1,5 @@
 [core]
-    remote = myremote1
+    remote = myremote
     autostage = true
-['remote "myremote1"']
-    url = gs://dvcmanager/storage
+['remote "myremote"']
+    url = s3://aws-session6/session-6/

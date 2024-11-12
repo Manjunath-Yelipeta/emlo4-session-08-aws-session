@@ -1,0 +1,161 @@
+name: CML-EC2-Runner
+on: 
+  workflow_dispatch:
+
+jobs:
+  build-and-push-ecr-image:
+    name: Build and push ECR image
+    runs-on: ubuntu-latest
+    outputs:
+      commit_id: ${{ steps.get_commit_id.outputs.commit_id }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Install Utilities
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq unzip
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1  # Public ECR requires us-east-1
+
+      - name: Login to Amazon ECR Public
+        id: login-ecr-public
+        run: |
+          aws ecr-public get-login-password --region us-east-1 | docker login --username AWS --password-stdin public.ecr.aws
+
+      - name: Get latest commit ID
+        id: get_commit_id
+        run: |
+          latest_commit=$(git rev-parse HEAD)
+          echo "commit_id=$latest_commit" >> $GITHUB_OUTPUT
+
+      - name: Build, tag, and push image to Amazon ECR Public
+        id: build-image
+        env:
+          ECR_REGISTRY: public.ecr.aws/y6b4w2a2
+          ECR_REPOSITORY: aws-session/aws-session-ecr
+          IMAGE_TAG: latest
+        run: |
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+  launch-runner:
+    runs-on: ubuntu-latest
+    needs: build-and-push-ecr-image
+    outputs:
+      commit_id: ${{ steps.get_commit_id_runner.outputs.commit_id }}
+    steps:
+      - uses: actions/checkout@v3
+      - uses: iterative/setup-cml@v2
+
+      - name: Get latest commit ID
+        id: get_commit_id_runner
+        run: |
+          echo "commit_id=${{ needs.build-and-push-ecr-image.outputs.commit_id }}" >> $GITHUB_OUTPUT
+
+      - name: Deploy runner on AWS EC2 
+        env:
+          REPO_TOKEN: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: |
+          cml runner launch \
+          --cloud=aws \
+          --name=session-08 \
+          --cloud-region=ap-south-1 \
+          --cloud-type=g4dn.xlarge \
+          --cloud-hdd-size=64 \
+          --cloud-spot \
+          --single \
+          --labels=cml-gpu \
+          --idle-timeout=100 \
+          --cloud-ami=${{ secrets.CUSTOM_AMI_ID }} \
+          --cloud-startup-script='sudo systemctl start docker && sudo usermod -aG docker $(whoami)'
+
+  train-and-report:
+    runs-on: [self-hosted, cml-gpu]
+    needs: launch-runner
+    outputs:
+      commit_id: ${{ steps.get_commit_id_ec2.outputs.commit_id }}
+    timeout-minutes: 20
+    steps:
+      - name: Verify Docker and GPU Setup
+        run: |
+          echo "Verifying Docker installation..."
+          docker --version
+          docker info
+          sudo systemctl status docker
+          
+          echo "Verifying GPU setup..."
+          nvidia-smi
+          docker run --rm --gpus all nvidia/cuda:11.6.2-base-ubuntu20.04 nvidia-smi
+
+      - name: Verify EC2 Instance
+        run: |
+          echo "Checking instance information..."
+          TOKEN=$(curl -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
+          curl -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/instance-type
+          
+          echo "Checking system resources..."
+          lscpu
+          free -h
+          df -h
+          
+          echo "Checking environment..."
+          env | grep AWS || true
+          hostname
+          whoami
+          pwd
+
+      - name: Set up AWS CLI credentials
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ap-south-1
+        run: |
+          mkdir -p ~/.aws
+          echo "[default]" > ~/.aws/config
+          echo "region=${AWS_DEFAULT_REGION}" >> ~/.aws/config
+          echo "[default]" > ~/.aws/credentials
+          echo "aws_access_key_id=${AWS_ACCESS_KEY_ID}" >> ~/.aws/credentials
+          echo "aws_secret_access_key=${AWS_SECRET_ACCESS_KEY}" >> ~/.aws/credentials
+
+      - name: Pull and Run Training Container
+        run: |
+          aws ecr-public get-login-password --region us-east-1 | docker login --username AWS --password-stdin public.ecr.aws
+          
+          docker pull public.ecr.aws/y6b4w2a2/aws-session/aws-session-ecr:latest
+          
+          mkdir -p model_storage
+          docker run --gpus=all \
+            -v "$(pwd)/model_storage:/workspace/model_storage" \
+            -e AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }} \
+            -e AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }} \
+            -e AWS_DEFAULT_REGION=${{ secrets.AWS_REGION }} \
+            public.ecr.aws/y6b4w2a2/aws-session/aws-session-ecr:latest \
+            /bin/bash -c "
+              dvc pull -r myremote && \
+              mkdir -p model_storage && \
+              dvc repro -f 
+            "
+
+      - name: Upload Model Checkpoint
+        run: |
+          checkpoint_file=$(head -n 1 ./model_storage/best_model_checkpoint.txt)
+          echo "CHECKPOINT_FILE=$checkpoint_file" >> $GITHUB_ENV
+          
+          bucket_name="mybucket-emlo-mumbai"
+          s3_key="session-08-checkpoint/${{ needs.launch-runner.outputs.commit_id }}/$(basename "$checkpoint_file")"
+          echo "Uploading $checkpoint_file to s3://$bucket_name/$s3_key"
+          aws s3 cp "$checkpoint_file" "s3://$bucket_name/$s3_key"
+
+      - name: Cleanup
+        run: |
+          docker system prune -f

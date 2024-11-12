@@ -1,9 +1,9 @@
-FROM python:3.12-slim
+FROM pytorch/pytorch:2.3.1-cuda11.8-cudnn8-runtime
 
 WORKDIR /workspace
 COPY . .
-RUN pip install --no-cache-dir uv
-RUN uv pip install -r pyproject.toml --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cpu --system
+RUN pip install uv
+RUN uv pip install -r pyproject.toml --system
 
 # CMD ["python", "src/train.py"]
 CMD ["tail", "-f", "/dev/null"]

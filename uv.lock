@@ -15,6 +15,26 @@ wheels = [
 ]
 
 [[package]]
+name = "aiobotocore"
+version = "2.15.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "aiohttp" },
+    { name = "aioitertools" },
+    { name = "botocore" },
+    { name = "wrapt" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/e3/3d/5d54985abed848a4d4dafd10d7eb9ecd6bd7fff9533223911a92c2e6e15d/aiobotocore-2.15.2.tar.gz", hash = "sha256:9ac1cfcaccccc80602968174aa032bf978abe36bd4e55e6781d6500909af1375", size = 107035 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a4/57/6402242dde160d9ef9903487b4277443dc3da04615f6c4d3b48564a8ab57/aiobotocore-2.15.2-py3-none-any.whl", hash = "sha256:d4d3128b4b558e2b4c369bfa963b022d7e87303adb82eec623cec8aa77ae578a", size = 77400 },
+]
+
+[package.optional-dependencies]
+boto3 = [
+    { name = "boto3" },
+]
+
+[[package]]
 name = "aiohappyeyeballs"
 version = "2.4.3"
 source = { registry = "https://pypi.org/simple" }
@@ -79,6 +99,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/01/c1/d57818a0ed5b0313ad8c620638225ddd44094d0d606ee33f3df5105572cd/aiohttp_retry-2.8.3.tar.gz", hash = "sha256:9a8e637e31682ad36e1ff9f8bcba912fcfc7d7041722bc901a4b948da4d71ea9", size = 10585 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/57/57/af573003eca6248a5cbc538fc46bea5b249c2ac86f27140b0a621bcd3fde/aiohttp_retry-2.8.3-py3-none-any.whl", hash = "sha256:3aeeead8f6afe48272db93ced9440cf4eda8b6fd7ee2abb25357b7eb28525b45", size = 9773 },
+]
+
+[[package]]
+name = "aioitertools"
+version = "0.12.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/06/de/38491a84ab323b47c7f86e94d2830e748780525f7a10c8600b67ead7e9ea/aioitertools-0.12.0.tar.gz", hash = "sha256:c2a9055b4fbb7705f561b9d86053e8af5d10cc845d22c32008c43490b2d8dd6b", size = 19369 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/85/13/58b70a580de00893223d61de8fea167877a3aed97d4a5e1405c9159ef925/aioitertools-0.12.0-py3-none-any.whl", hash = "sha256:fc1f5fac3d737354de8831cbba3eb04f79dd649d8f3afb4c5b114925e662a796", size = 24345 },
 ]
 
 [[package]]
@@ -216,6 +245,34 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/47/6d/a3a239e938960df1a662b93d6230d4f3e9b4a22982d060fc38c42f45a56b/black-24.10.0-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:ddacb691cdcdf77b96f549cf9591701d8db36b2f19519373d60d31746068dbf2", size = 1760928 },
     { url = "https://files.pythonhosted.org/packages/dd/cf/af018e13b0eddfb434df4d9cd1b2b7892bab119f7a20123e93f6910982e8/black-24.10.0-cp313-cp313-win_amd64.whl", hash = "sha256:680359d932801c76d2e9c9068d05c6b107f2584b2a5b88831c83962eb9984c1b", size = 1436875 },
     { url = "https://files.pythonhosted.org/packages/8d/a7/4b27c50537ebca8bec139b872861f9d2bf501c5ec51fcf897cb924d9e264/black-24.10.0-py3-none-any.whl", hash = "sha256:3bb2b7a1f7b685f85b11fed1ef10f8a9148bceb49853e47a294a3dd963c1dd7d", size = 206898 },
+]
+
+[[package]]
+name = "boto3"
+version = "1.35.36"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "botocore" },
+    { name = "jmespath" },
+    { name = "s3transfer" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/33/9f/17536f9a1ab4c6ee454c782f27c9f0160558f70502fc55da62e456c47229/boto3-1.35.36.tar.gz", hash = "sha256:586524b623e4fbbebe28b604c6205eb12f263cc4746bccb011562d07e217a4cb", size = 110987 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/52/6b/8b126c2e1c07fae33185544ea974de67027afc905bd072feef9fbbd38d3d/boto3-1.35.36-py3-none-any.whl", hash = "sha256:33735b9449cd2ef176531ba2cb2265c904a91244440b0e161a17da9d24a1e6d1", size = 139143 },
+]
+
+[[package]]
+name = "botocore"
+version = "1.35.36"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "jmespath" },
+    { name = "python-dateutil" },
+    { name = "urllib3" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/8d/4f/11d2d314f0bdbe7ff975737d125e1a5357115afe28fcc64f13e68b05ba61/botocore-1.35.36.tar.gz", hash = "sha256:354ec1b766f0029b5d6ff0c45d1a0f9e5007b7d2f3ec89bcdd755b208c5bc797", size = 12808757 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/2a/60/056d58b606731f94fe395266c604ea9efcecc10e6857ceb9b10e6831d746/botocore-1.35.36-py3-none-any.whl", hash = "sha256:64241c778bf2dc863d93abab159e14024d97a926a5715056ef6411418cb9ead3", size = 12597046 },
 ]
 
 [[package]]
@@ -716,6 +773,21 @@ wheels = [
 ]
 
 [[package]]
+name = "dvc-s3"
+version = "3.2.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "aiobotocore", extra = ["boto3"] },
+    { name = "dvc" },
+    { name = "flatten-dict" },
+    { name = "s3fs" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/fa/cf/14e5f014f77381a58617c1ee3ae98f8fc15768e6a89ff0efac3ff7fc0016/dvc_s3-3.2.0.tar.gz", hash = "sha256:1d012ac1dce47659986f918123b48931cf9b3429ab0b4a22fd4b02448185ceb6", size = 16418 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e5/e9/a14a7e0132bf03b4d3a4226dee00d42d661b33a4fcedd5f0b147421344db/dvc_s3-3.2.0-py3-none-any.whl", hash = "sha256:036fa8b847349f14cf8ab5e789ae4eda47f50dd1eee487c83ee1c0902d647c25", size = 13817 },
+]
+
+[[package]]
 name = "dvc-studio-client"
 version = "0.21.0"
 source = { registry = "https://pypi.org/simple" }
@@ -755,6 +827,7 @@ dependencies = [
     { name = "coverage" },
     { name = "dvc", extra = ["gs"] },
     { name = "dvc-gdrive" },
+    { name = "dvc-s3" },
     { name = "gdown" },
     { name = "hydra-core" },
     { name = "lightning", extra = ["extra"] },
@@ -781,9 +854,10 @@ requires-dist = [
     { name = "black", specifier = ">=24.8.0" },
     { name = "comet-ml", specifier = "==3.47.0" },
     { name = "coverage", specifier = "==7.6.3" },
-    { name = "dvc", specifier = "==3.55.2" },
+    { name = "dvc", specifier = ">=3.55.2" },
     { name = "dvc", extras = ["gs"] },
-    { name = "dvc-gdrive" },
+    { name = "dvc-gdrive", specifier = ">=3.0.1" },
+    { name = "dvc-s3", specifier = ">=3.2.0" },
     { name = "gdown", specifier = "==5.2.0" },
     { name = "hydra-core", specifier = "==1.3.0" },
     { name = "lightning", extras = ["extra"], specifier = "==2.4.0" },
@@ -1285,6 +1359,15 @@ wheels = [
 ]
 
 [[package]]
+name = "jmespath"
+version = "1.0.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/00/2a/e867e8531cf3e36b41201936b7fa7ba7b5702dbef42922193f05c8976cd6/jmespath-1.0.1.tar.gz", hash = "sha256:90261b206d6defd58fdd5e85f478bf633a2901798906be2ad389150c5c60edbe", size = 25843 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/31/b4/b9b800c45527aadd64d5b442f9b932b00648617eb5d63d2c7a6587b7cafc/jmespath-1.0.1-py3-none-any.whl", hash = "sha256:02e2e4cc71b5bcab88332eebf907519190dd9e6e82107fa7f83b1003a6252980", size = 20256 },
+]
+
+[[package]]
 name = "joblib"
 version = "1.4.2"
 source = { registry = "https://pypi.org/simple" }
@@ -1426,15 +1509,14 @@ extra = [
 [[package]]
 name = "lightning-utilities"
 version = "0.11.8"
-source = { registry = "https://pypi.org/simple" }
+source = { registry = "https://download.pytorch.org/whl/cpu" }
 dependencies = [
     { name = "packaging" },
     { name = "setuptools" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/46/ab/0c421d19e316420a2d54a2da5ae4a4dcd557928ccf7953dbbe4b4eee34d6/lightning_utilities-0.11.8.tar.gz", hash = "sha256:8dfbdc6c52f9847efc948dc462ab8bebb4f4e9a43bd69c82c1b1da484dac20e6", size = 28614 }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/2e/5d/4c4672025c23a305231a81bf492f65aa3ea0965a89f9ca369a9ee7d47fd9/lightning_utilities-0.11.8-py3-none-any.whl", hash = "sha256:a57edb34a44258f0c61eed8b8b88926766e9052f5e60bbe69e4871a2b2bfd970", size = 26816 },
+    { url = "https://download.pytorch.org/whl/lightning_utilities-0.11.8-py3-none-any.whl", hash = "sha256:a57edb34a44258f0c61eed8b8b88926766e9052f5e60bbe69e4871a2b2bfd970" },
 ]
 
 [[package]]
@@ -1579,10 +1661,9 @@ wheels = [
 [[package]]
 name = "mypy-extensions"
 version = "1.0.0"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/98/a4/1ab47638b92648243faf97a5aeb6ea83059cc3624972ab6b8d2316078d3f/mypy_extensions-1.0.0.tar.gz", hash = "sha256:75dbf8955dc00442a438fc4d0666508a9a97b6bd41aa2f0ffe9d2f2725af0782", size = 4433 }
+source = { registry = "https://download.pytorch.org/whl/cpu" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/2a/e2/5d3f6ada4297caebe1a2add3b126fe800c96f56dbe5d1988a2cbe0b267aa/mypy_extensions-1.0.0-py3-none-any.whl", hash = "sha256:4392f6c0eb8a5668a69e23d168ffa70f0be9ccfd32b5cc2d26a34ae5b844552d", size = 4695 },
+    { url = "https://download.pytorch.org/whl/mypy_extensions-1.0.0-py3-none-any.whl", hash = "sha256:4392f6c0eb8a5668a69e23d168ffa70f0be9ccfd32b5cc2d26a34ae5b844552d" },
 ]
 
 [[package]]
@@ -2395,6 +2476,32 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/27/38/4cf4d482b84ecdf51efae6635cc5483a83cf5ca9d9c13e205a750e251696/ruamel.yaml.clib-0.2.8-cp312-cp312-musllinux_1_1_x86_64.whl", hash = "sha256:aab7fd643f71d7946f2ee58cc88c9b7bfc97debd71dcc93e03e2d174628e7e2d", size = 740325 },
     { url = "https://files.pythonhosted.org/packages/6f/67/c62c6eea53a4feb042727a3d6c18f50dc99683c2b199c06bd2a9e3db8e22/ruamel.yaml.clib-0.2.8-cp312-cp312-win32.whl", hash = "sha256:5c365d91c88390c8d0a8545df0b5857172824b1c604e867161e6b3d59a827eaa", size = 98639 },
     { url = "https://files.pythonhosted.org/packages/10/d2/52a3d810d0b5b3720725c0504a27b3fced7b6f310fe928f7019d79387bc1/ruamel.yaml.clib-0.2.8-cp312-cp312-win_amd64.whl", hash = "sha256:1758ce7d8e1a29d23de54a16ae867abd370f01b5a69e1a3ba75223eaa3ca1a1b", size = 115305 },
+]
+
+[[package]]
+name = "s3fs"
+version = "2024.2.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "aiobotocore" },
+    { name = "aiohttp" },
+    { name = "fsspec" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/20/cd/a19cde20bb132dcef0bb50a3cfe1edadbb1dee8a8b936e725280aada0bbf/s3fs-2024.2.0.tar.gz", hash = "sha256:f8064f522ad088b56b043047c825734847c0269df19f2613c956d4c20de15b62", size = 74186 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/7c/76/efa5f84237620d5aa38e58285945b47449d8a94bf7037cae06f680b34c41/s3fs-2024.2.0-py3-none-any.whl", hash = "sha256:c140de37175c157cb662aa6ad7423365df732ac5f10ef5bf7b76078c6333a942", size = 28866 },
+]
+
+[[package]]
+name = "s3transfer"
+version = "0.10.3"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "botocore" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/a0/a8/e0a98fd7bd874914f0608ef7c90ffde17e116aefad765021de0f012690a2/s3transfer-0.10.3.tar.gz", hash = "sha256:4f50ed74ab84d474ce614475e0b8d5047ff080810aac5d01ea25231cfc944b0c", size = 144591 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e5/c0/b0fba8259b61c938c9733da9346b9f93e00881a9db22aafdd72f6ae0ec05/s3transfer-0.10.3-py3-none-any.whl", hash = "sha256:263ed587a5803c6c708d3ce44dc4dfedaab4c1a32e8329bab818933d79ddcf5d", size = 82625 },
 ]
 
 [[package]]
