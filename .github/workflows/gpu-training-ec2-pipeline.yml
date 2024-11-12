@@ -1,0 +1,140 @@
+name: GPU-Training-Pipeline
+on: 
+  workflow_dispatch:
+
+jobs:
+  launch-and-train:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-south-1
+
+      - name: Launch EC2 Instance
+        id: launch-ec2
+        env:
+          AWS_DEFAULT_REGION: ap-south-1
+        run: |
+          # Get VPC and Subnet
+          VPC_ID=$(aws ec2 describe-vpcs --filters "Name=isDefault,Values=true" --query "Vpcs[0].VpcId" --output text)
+          SUBNET_ID=$(aws ec2 describe-subnets --filters "Name=vpc-id,Values=$VPC_ID" --query "Subnets[0].SubnetId" --output text)
+          
+          # Create security group
+          SG_NAME="ml-training-sg-$(date +%s)"
+          SG_ID=$(aws ec2 create-security-group \
+            --group-name "$SG_NAME" \
+            --description "Security group for ML training" \
+            --vpc-id $VPC_ID \
+            --query "GroupId" --output text)
+          
+          # Configure security group
+          aws ec2 authorize-security-group-ingress \
+            --group-id $SG_ID \
+            --protocol tcp \
+            --port 22 \
+            --cidr 0.0.0.0/0
+          
+          # Create user data script
+          cat << 'EOF' > user_data.sh
+          #!/bin/bash
+          # Update and install dependencies
+          apt-get update
+          apt-get install -y python3-pip git docker.io nvidia-docker2
+          systemctl start docker
+          systemctl enable docker
+
+          # Install AWS CLI
+          curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+          unzip awscliv2.zip
+          ./aws/install
+
+          # Configure Docker to run without sudo
+          usermod -aG docker ubuntu
+          EOF
+          
+          # Launch EC2 instance
+          INSTANCE_ID=$(aws ec2 run-instances \
+            --image-id ami-0287a05f0ef0e9d9a \
+            --instance-type g4dn.xlarge \
+            --key-name ${{ secrets.EC2_KEY_PAIR_NAME }} \
+            --security-group-ids $SG_ID \
+            --subnet-id $SUBNET_ID \
+            --block-device-mappings "[{\"DeviceName\":\"/dev/xvda\",\"Ebs\":{\"VolumeSize\":100,\"VolumeType\":\"gp2\"}}]" \
+            --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=ML-Training}]" \
+            --instance-market-options "MarketType=spot,SpotOptions={MaxPrice=0.17}" \
+            --user-data file://user_data.sh \
+            --query "Instances[0].InstanceId" \
+            --output text)
+          
+          echo "INSTANCE_ID=$INSTANCE_ID" >> $GITHUB_ENV
+          echo "SG_ID=$SG_ID" >> $GITHUB_ENV
+          
+          # Wait for instance to be running
+          aws ec2 wait instance-running --instance-ids $INSTANCE_ID
+          
+          # Get instance public IP
+          INSTANCE_IP=$(aws ec2 describe-instances \
+            --instance-ids $INSTANCE_ID \
+            --query "Reservations[0].Instances[0].PublicIpAddress" \
+            --output text)
+          
+          echo "INSTANCE_IP=$INSTANCE_IP" >> $GITHUB_ENV
+          echo "Instance $INSTANCE_ID launched at $INSTANCE_IP"
+
+      - name: Wait for instance setup
+        run: |
+          echo "Waiting for instance setup to complete..."
+          sleep 180
+
+      - name: Setup SSH
+        env:
+          PRIVATE_KEY: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$PRIVATE_KEY" > ~/.ssh/ec2_key.pem
+          chmod 600 ~/.ssh/ec2_key.pem
+          
+          # Add instance to known hosts
+          ssh-keyscan -H ${{ env.INSTANCE_IP }} >> ~/.ssh/known_hosts
+
+      - name: Run Training
+        run: |
+          # Copy training files to instance
+          scp -i ~/.ssh/ec2_key.pem -r ./* ubuntu@${{ env.INSTANCE_IP }}:~/training/
+          
+          # Execute training
+          ssh -i ~/.ssh/ec2_key.pem ubuntu@${{ env.INSTANCE_IP }} << 'EOF'
+            cd ~/training
+            # Run your training commands here
+            nvidia-smi  # Verify GPU
+            # Example: python train.py
+          EOF
+
+      - name: Download Results
+        run: |
+          # Copy results back
+          scp -i ~/.ssh/ec2_key.pem -r ubuntu@${{ env.INSTANCE_IP }}:~/training/outputs ./outputs
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: training-results
+          path: outputs/
+
+      - name: Cleanup AWS Resources
+        if: always()
+        run: |
+          # Terminate instance
+          aws ec2 terminate-instances --instance-ids ${{ env.INSTANCE_ID }}
+          
+          # Wait for termination
+          aws ec2 wait instance-terminated --instance-ids ${{ env.INSTANCE_ID }}
+          
+          # Delete security group
+          aws ec2 delete-security-group --group-id ${{ env.SG_ID }}
