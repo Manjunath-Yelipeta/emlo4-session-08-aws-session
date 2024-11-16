@@ -1,140 +1,145 @@
-name: GPU-Training-Pipeline
+name: CML-EC2-Runner
 on: 
   workflow_dispatch:
 
 jobs:
-  launch-and-train:
+  build-and-push-ecr-image:
+    name: Build and push ECR image
     runs-on: ubuntu-latest
+    outputs:
+      commit_id: ${{ steps.get_commit_id.outputs.commit_id }}
+      image_uri: ${{ steps.build-image.outputs.image_uri }}
     steps:
       - name: Checkout Code
         uses: actions/checkout@v3
+
+      - name: Install Utilities
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq unzip
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v1
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1  # Public ECR requires us-east-1
+
+      - name: Login to Amazon ECR Public
+        id: login-ecr-public
+        run: |
+          aws ecr-public get-login-password --region us-east-1 | docker login --username AWS --password-stdin public.ecr.aws
+
+      - name: Get latest commit ID
+        id: get_commit_id
+        run: |
+          latest_commit=$(git rev-parse HEAD)
+          echo "commit_id=$latest_commit" >> $GITHUB_OUTPUT
+
+      - name: Build, tag, and push image to Amazon ECR Public
+        id: build-image
+        env:
+          ECR_REGISTRY: public.ecr.aws
+          ECR_NAMESPACE: y6b4w2a2
+          ECR_REPOSITORY: aws-session/aws-session-ecr
+          IMAGE_TAG: ${{ steps.get_commit_id.outputs.commit_id }}
+        run: |
+          # Build with both latest and commit-specific tags
+          FULL_IMAGE_URI=$ECR_REGISTRY/$ECR_NAMESPACE/$ECR_REPOSITORY
+          docker build -t $FULL_IMAGE_URI:$IMAGE_TAG -t $FULL_IMAGE_URI:latest .
+          docker push $FULL_IMAGE_URI:$IMAGE_TAG
+          docker push $FULL_IMAGE_URI:latest
+          echo "image_uri=$FULL_IMAGE_URI:$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+  launch-runner:
+    runs-on: ubuntu-latest
+    needs: build-and-push-ecr-image
+    outputs:
+      commit_id: ${{ steps.get_commit_id_runner.outputs.commit_id }}
+    steps:
+      - uses: actions/checkout@v3
+      - uses: iterative/setup-cml@v2
+
+      - name: Get latest commit ID
+        id: get_commit_id_runner
+        run: |
+          echo "commit_id=${{ needs.build-and-push-ecr-image.outputs.commit_id }}" >> $GITHUB_OUTPUT
+
+      - name: Deploy runner on AWS EC2 
+        env:
+          REPO_TOKEN: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: |
+          cml runner launch \
+          --cloud=aws \
+          --name=session-08-${{ steps.get_commit_id_runner.outputs.commit_id }} \
+          --cloud-region=ap-south-1 \
+          --cloud-type=g4dn.xlarge \
+          --cloud-hdd-size=64 \
+          --cloud-spot \
+          --single \
+          --labels=cml-gpu \
+          --idle-timeout=100 \
+          --cloud-startup-script='
+            sudo systemctl start docker && 
+            sudo usermod -aG docker $(whoami) && 
+            aws ecr-public get-login-password --region us-east-1 | docker login --username AWS --password-stdin public.ecr.aws
+          '
+
+  train-and-report:
+    runs-on: [self-hosted, cml-gpu]
+    needs: [launch-runner, build-and-push-ecr-image]
+    timeout-minutes: 20
+    steps:
+      - name: Verify Docker and GPU Setup
+        run: |
+          echo "Verifying Docker installation..."
+          docker --version
+          docker info
+          
+          echo "Verifying GPU setup..."
+          nvidia-smi
+          docker run --rm --gpus all nvidia/cuda:11.6.2-base-ubuntu20.04 nvidia-smi
+
+      - name: Configure AWS
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ap-south-1
 
-      - name: Launch EC2 Instance
-        id: launch-ec2
+      - name: Pull and Run Training Container
         env:
-          AWS_DEFAULT_REGION: ap-south-1
+          IMAGE_URI: ${{ needs.build-and-push-ecr-image.outputs.image_uri }}
         run: |
-          # Get VPC and Subnet
-          VPC_ID=$(aws ec2 describe-vpcs --filters "Name=isDefault,Values=true" --query "Vpcs[0].VpcId" --output text)
-          SUBNET_ID=$(aws ec2 describe-subnets --filters "Name=vpc-id,Values=$VPC_ID" --query "Subnets[0].SubnetId" --output text)
-          
-          # Create security group
-          SG_NAME="ml-training-sg-$(date +%s)"
-          SG_ID=$(aws ec2 create-security-group \
-            --group-name "$SG_NAME" \
-            --description "Security group for ML training" \
-            --vpc-id $VPC_ID \
-            --query "GroupId" --output text)
-          
-          # Configure security group
-          aws ec2 authorize-security-group-ingress \
-            --group-id $SG_ID \
-            --protocol tcp \
-            --port 22 \
-            --cidr 0.0.0.0/0
-          
-          # Create user data script
-          cat << 'EOF' > user_data.sh
-          #!/bin/bash
-          # Update and install dependencies
-          apt-get update
-          apt-get install -y python3-pip git docker.io nvidia-docker2
-          systemctl start docker
-          systemctl enable docker
+          mkdir -p model_storage
+          docker run --gpus=all \
+            -v "$(pwd)/model_storage:/workspace/model_storage" \
+            -e AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }} \
+            -e AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }} \
+            -e AWS_DEFAULT_REGION=ap-south-1 \
+            ${IMAGE_URI} \
+            /bin/bash -c "
+              dvc pull -r myremote && \
+              mkdir -p model_storage && \
+              dvc repro -f 
+            "
 
-          # Install AWS CLI
-          curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
-          unzip awscliv2.zip
-          ./aws/install
-
-          # Configure Docker to run without sudo
-          usermod -aG docker ubuntu
-          EOF
-          
-          # Launch EC2 instance
-          INSTANCE_ID=$(aws ec2 run-instances \
-            --image-id ami-0287a05f0ef0e9d9a \
-            --instance-type g4dn.xlarge \
-            --key-name ${{ secrets.EC2_KEY_PAIR_NAME }} \
-            --security-group-ids $SG_ID \
-            --subnet-id $SUBNET_ID \
-            --block-device-mappings "[{\"DeviceName\":\"/dev/xvda\",\"Ebs\":{\"VolumeSize\":100,\"VolumeType\":\"gp2\"}}]" \
-            --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=ML-Training}]" \
-            --instance-market-options "MarketType=spot,SpotOptions={MaxPrice=0.17}" \
-            --user-data file://user_data.sh \
-            --query "Instances[0].InstanceId" \
-            --output text)
-          
-          echo "INSTANCE_ID=$INSTANCE_ID" >> $GITHUB_ENV
-          echo "SG_ID=$SG_ID" >> $GITHUB_ENV
-          
-          # Wait for instance to be running
-          aws ec2 wait instance-running --instance-ids $INSTANCE_ID
-          
-          # Get instance public IP
-          INSTANCE_IP=$(aws ec2 describe-instances \
-            --instance-ids $INSTANCE_ID \
-            --query "Reservations[0].Instances[0].PublicIpAddress" \
-            --output text)
-          
-          echo "INSTANCE_IP=$INSTANCE_IP" >> $GITHUB_ENV
-          echo "Instance $INSTANCE_ID launched at $INSTANCE_IP"
-
-      - name: Wait for instance setup
+      - name: Upload Model Checkpoint
         run: |
-          echo "Waiting for instance setup to complete..."
-          sleep 180
+          if [ -f ./model_storage/best_model_checkpoint.txt ]; then
+            checkpoint_file=$(head -n 1 ./model_storage/best_model_checkpoint.txt)
+            bucket_name="mybucket-emlo-mumbai"
+            s3_key="session-08-checkpoint/${{ needs.launch-runner.outputs.commit_id }}/$(basename "$checkpoint_file")"
+            echo "Uploading $checkpoint_file to s3://$bucket_name/$s3_key"
+            aws s3 cp "$checkpoint_file" "s3://$bucket_name/$s3_key"
+          else
+            echo "No checkpoint file found"
+            exit 1
+          fi
 
-      - name: Setup SSH
-        env:
-          PRIVATE_KEY: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
-        run: |
-          mkdir -p ~/.ssh
-          echo "$PRIVATE_KEY" > ~/.ssh/ec2_key.pem
-          chmod 600 ~/.ssh/ec2_key.pem
-          
-          # Add instance to known hosts
-          ssh-keyscan -H ${{ env.INSTANCE_IP }} >> ~/.ssh/known_hosts
-
-      - name: Run Training
-        run: |
-          # Copy training files to instance
-          scp -i ~/.ssh/ec2_key.pem -r ./* ubuntu@${{ env.INSTANCE_IP }}:~/training/
-          
-          # Execute training
-          ssh -i ~/.ssh/ec2_key.pem ubuntu@${{ env.INSTANCE_IP }} << 'EOF'
-            cd ~/training
-            # Run your training commands here
-            nvidia-smi  # Verify GPU
-            # Example: python train.py
-          EOF
-
-      - name: Download Results
-        run: |
-          # Copy results back
-          scp -i ~/.ssh/ec2_key.pem -r ubuntu@${{ env.INSTANCE_IP }}:~/training/outputs ./outputs
-
-      - name: Upload Artifacts
-        uses: actions/upload-artifact@v3
-        with:
-          name: training-results
-          path: outputs/
-
-      - name: Cleanup AWS Resources
+      - name: Cleanup
         if: always()
         run: |
-          # Terminate instance
-          aws ec2 terminate-instances --instance-ids ${{ env.INSTANCE_ID }}
-          
-          # Wait for termination
-          aws ec2 wait instance-terminated --instance-ids ${{ env.INSTANCE_ID }}
-          
-          # Delete security group
-          aws ec2 delete-security-group --group-id ${{ env.SG_ID }}
+          docker system prune -f
