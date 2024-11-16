@@ -60,10 +60,14 @@ jobs:
       - uses: actions/checkout@v3
       - uses: iterative/setup-cml@v2
 
+      - name: Display the commit ID
+        run: |
+          echo "Latest commit ID is: ${{ needs.build-and-push-ecr-image.outputs.commit_id }}"
+
       - name: Get latest commit ID
         id: get_commit_id_runner
         run: |
-          echo "commit_id=${{ needs.build-and-push-ecr-image.outputs.commit_id }}" >> $GITHUB_OUTPUT
+          echo "::set-output name=commit_id::${{ needs.build-and-push-ecr-image.outputs.commit_id }}"
 
       - name: Deploy runner on AWS EC2 
         env:
@@ -73,18 +77,14 @@ jobs:
         run: |
           cml runner launch \
           --cloud=aws \
-          --name=session-08-${{ steps.get_commit_id_runner.outputs.commit_id }} \
+          --name=session-08 \
           --cloud-region=ap-south-1 \
           --cloud-type=g4dn.xlarge \
           --cloud-hdd-size=64 \
           --cloud-spot \
           --single \
           --labels=cml-gpu \
-          --idle-timeout=100 \
-          --cloud-startup-script='
-            sudo systemctl start docker && 
-            sudo usermod -aG docker $(whoami) && 
-            aws ecr-public get-login-password --region us-east-1 | docker login --username AWS --password-stdin public.ecr.aws
+          --idle-timeout=100 
           '
 
   train-and-report:
