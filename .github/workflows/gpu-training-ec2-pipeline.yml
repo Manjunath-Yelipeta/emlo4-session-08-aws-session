@@ -1,4 +1,4 @@
-name: CML-EC2-Runner
+name: CML-EC2-Runner-GPU
 on: 
   workflow_dispatch:
 
