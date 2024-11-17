@@ -84,8 +84,7 @@ jobs:
           --cloud-spot \
           --single \
           --labels=cml-gpu \
-          --idle-timeout=100 
-          '
+          --idle-timeout=100
 
   train-and-report:
     runs-on: [self-hosted, cml-gpu]
