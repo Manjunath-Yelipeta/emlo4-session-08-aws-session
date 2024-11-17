@@ -206,13 +206,13 @@ jobs:
               mkdir -p model_storage && \
               dvc repro -f && \
               # Check for the specific checkpoint file
-              if [ -f /workspace/model_storage/epoch-checkpoint.ckpt ]; then
+              if [ -f /home/ubuntu/emlo4-session-08-aws-session/model_storage/epoch-checkpoint.ckpt ]; then
                 echo 'Found checkpoint file'
-                ls -la /workspace/model_storage/epoch-checkpoint.ckpt
+                ls -la /home/ubuntu/emlo4-session-08-aws-session/model_storage/epoch-checkpoint.ckpt
               else
                 echo 'WARNING: Checkpoint file not found'
                 echo 'Contents of model_storage:'
-                ls -la /workspace/model_storage/
+                ls -la /home/ubuntu/emlo4-session-08-aws-session/model_storage/epoch-checkpoint.ckpt
                 exit 1
               fi
             "
@@ -222,13 +222,13 @@ jobs:
           echo "Current directory contents:"
           ls -la
           echo "\nmodel_storage directory contents:"
-          ls -la model_storage/
+          ls -la /home/ubuntu/emlo4-session-08-aws-session/model_storage/epoch-checkpoint.ckpt
           
       - name: Set checkpoint path
         id: set_checkpoint
         run: |
-          if [ -f ./model_storage/epoch-checkpoint.ckpt ]; then
-            echo "CHECKPOINT_FILE=./model_storage/epoch-checkpoint.ckpt" >> $GITHUB_ENV
+          if [ -f /home/ubuntu/emlo4-session-08-aws-session/model_storage/epoch-checkpoint.ckpt ]; then
+            echo "CHECKPOINT_FILE=/home/ubuntu/emlo4-session-08-aws-session/model_storage/epoch-checkpoint.ckpt" >> $GITHUB_ENV
             echo "Found checkpoint file: epoch-checkpoint.ckpt"
           else
             echo "Error: Checkpoint file not found"
@@ -237,7 +237,7 @@ jobs:
 
       - name: Upload checkpoint to S3
         run: |
-          checkpoint_path="./model_storage/epoch-checkpoint.ckpt"
+          checkpoint_path="/home/ubuntu/emlo4-session-08-aws-session/model_storage/epoch-checkpoint.ckpt"
           bucket_name="mybucket-emlo-mumbai"
           s3_key="session-08-checkpoint/${{ needs.launch-runner.outputs.commit_id }}/epoch-checkpoint.ckpt"
           echo "Uploading $checkpoint_path to s3://$bucket_name/$s3_key"
