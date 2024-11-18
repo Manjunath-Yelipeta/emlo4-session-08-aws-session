@@ -3,8 +3,166 @@ on:
   workflow_dispatch:
 
 jobs:
-  # Previous jobs remain the same...
+  build-and-push-ecr-image:
+    name: Build and push ECR image
+    runs-on: ubuntu-latest
+    outputs:
+      commit_id: ${{ steps.get_commit_id.outputs.commit_id }}
+      image_uri: ${{ steps.build-image.outputs.image_uri }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
 
+      - name: Install Utilities
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq unzip
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+
+      - name: Login to Amazon ECR Public
+        id: login-ecr-public
+        run: |
+          aws ecr-public get-login-password --region us-east-1 | docker login --username AWS --password-stdin public.ecr.aws
+
+      - name: Get latest commit ID
+        id: get_commit_id
+        run: |
+          latest_commit=$(git rev-parse HEAD)
+          echo "commit_id=$latest_commit" >> $GITHUB_OUTPUT
+
+      - name: Build, tag, and push image to Amazon ECR Public
+        id: build-image
+        env:
+          ECR_REGISTRY: public.ecr.aws
+          ECR_NAMESPACE: y6b4w2a2
+          ECR_REPOSITORY: aws-session/aws-session-ecr
+          IMAGE_TAG: ${{ steps.get_commit_id.outputs.commit_id }}
+        run: |
+          # Build with both latest and commit-specific tags
+          FULL_IMAGE_URI=$ECR_REGISTRY/$ECR_NAMESPACE/$ECR_REPOSITORY
+          docker build -t $FULL_IMAGE_URI:$IMAGE_TAG -t $FULL_IMAGE_URI:latest .
+          docker push $FULL_IMAGE_URI:$IMAGE_TAG
+          docker push $FULL_IMAGE_URI:latest
+          echo "image_uri=$FULL_IMAGE_URI:$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+  launch-runner:
+    runs-on: ubuntu-latest
+    needs: build-and-push-ecr-image
+    outputs:
+      commit_id: ${{ steps.get_commit_id_runner.outputs.commit_id }}
+    steps:
+      - uses: actions/checkout@v3
+      - uses: iterative/setup-cml@v2
+
+      - name: Display the commit ID
+        run: |
+          echo "Latest commit ID is: ${{ needs.build-and-push-ecr-image.outputs.commit_id }}"
+
+      - name: Get latest commit ID
+        id: get_commit_id_runner
+        run: |
+          echo "::set-output name=commit_id::${{ needs.build-and-push-ecr-image.outputs.commit_id }}"
+
+      - name: Deploy runner on AWS EC2 
+        env:
+          REPO_TOKEN: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: |
+          cml runner launch \
+          --cloud=aws \
+          --name=session-08 \
+          --cloud-region=ap-south-1 \
+          --cloud-type=g4dn.xlarge \
+          --cloud-hdd-size=64 \
+          --cloud-spot \
+          --single \
+          --labels=cml-gpu \
+          --idle-timeout=100
+
+
+  train-and-report:
+    runs-on: [self-hosted, cml-gpu]
+    needs: launch-runner
+    outputs:
+      commit_id: ${{ steps.get_commit_id_ec2.outputs.commit_id }}
+    timeout-minutes: 20
+    steps:
+      # Previous steps remain the same until DVC commands...
+
+      - name: Run DVC commands in container
+        run: |
+          mkdir -p /home/ubuntu/emlo4-session-08-aws-session/model_storage
+          docker run --gpus=all \
+            -v "/home/ubuntu/emlo4-session-08-aws-session/model_storage:/home/ubuntu/emlo4-session-08-aws-session/model_storage" \
+            -e AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }} \
+            -e AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }} \
+            -e AWS_DEFAULT_REGION=${{ secrets.AWS_REGION }} \
+            ${{ secrets.AWS_ECR_LOGIN_URI }}/${{ secrets.ECR_REPOSITORY_NAME }}:latest \
+            /bin/bash -c "
+              set -x  # Enable debug mode
+              dvc pull -r myremote && \
+              dvc repro -f && \
+              # Ensure proper permissions
+              chown -R $(id -u):$(id -g) /home/ubuntu/emlo4-session-08-aws-session/model_storage
+            "
+
+      - name: Fix Permissions
+        run: |
+          sudo chown -R $USER:$USER /home/ubuntu/emlo4-session-08-aws-session/model_storage
+          sudo chmod -R 755 /home/ubuntu/emlo4-session-08-aws-session/model_storage
+
+      - name: Debug - List contents
+        run: |
+          echo "Current directory contents:"
+          ls -la
+          echo "\nFull path contents:"
+          sudo ls -la /home/ubuntu/emlo4-session-08-aws-session/model_storage/
+          echo "\nChecking file existence:"
+          if [ -f "/home/ubuntu/emlo4-session-08-aws-session/model_storage/epoch-checkpoint.ckpt" ]; then
+            echo "File exists"
+            stat /home/ubuntu/emlo4-session-08-aws-session/model_storage/epoch-checkpoint.ckpt
+          else
+            echo "File does not exist"
+            ls -la /home/ubuntu/emlo4-session-08-aws-session/
+          fi
+
+      - name: Set checkpoint path
+        id: set_checkpoint
+        run: |
+          if [ -f "/home/ubuntu/emlo4-session-08-aws-session/model_storage/epoch-checkpoint.ckpt" ]; then
+            echo "CHECKPOINT_FILE=/home/ubuntu/emlo4-session-08-aws-session/model_storage/epoch-checkpoint.ckpt" >> $GITHUB_ENV
+            echo "Found checkpoint file: epoch-checkpoint.ckpt"
+          else
+            echo "Error: Checkpoint file not found"
+            # Add debugging information
+            echo "Directory contents:"
+            sudo ls -la /home/ubuntu/emlo4-session-08-aws-session/model_storage/
+            exit 1
+          fi
+
+      - name: Upload checkpoint to S3
+        run: |
+          checkpoint_path="/home/ubuntu/emlo4-session-08-aws-session/model_storage/epoch-checkpoint.ckpt"
+          bucket_name="mybucket-emlo-mumbai"
+          s3_key="session-08-checkpoint/${{ needs.launch-runner.outputs.commit_id }}/epoch-checkpoint.ckpt"
+          echo "Uploading $checkpoint_path to s3://$bucket_name/$s3_key"
+          if [ -f "$checkpoint_path" ]; then
+            sudo aws s3 cp "$checkpoint_path" "s3://$bucket_name/$s3_key"
+          else
+            echo "Error: Checkpoint file not found at $checkpoint_path"
+            # Add debugging information
+            echo "Directory contents:"
+            sudo ls -la /home/ubuntu/emlo4-session-08-aws-session/model_storage/
+            exit 1
+          fi
   train-and-report:
     runs-on: [self-hosted, cml-gpu]
     needs: launch-runner
