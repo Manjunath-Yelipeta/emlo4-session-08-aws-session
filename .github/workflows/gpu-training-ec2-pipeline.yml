@@ -148,19 +148,39 @@ jobs:
             exit 1
           fi
 
+
       - name: Upload checkpoint to S3
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
         run: |
+          # Install AWS CLI if not present
+          if ! command -v aws &> /dev/null; then
+            curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+            unzip awscliv2.zip
+            sudo ./aws/install
+          fi
+
           checkpoint_path="/home/ubuntu/emlo4-session-08-aws-session/model_storage/epoch-checkpoint.ckpt"
-          bucket_name="mybucket-emlo-mumbai"
-          s3_key="session-08-checkpoint/${{ needs.launch-runner.outputs.commit_id }}/epoch-checkpoint.ckpt"
+          bucket_name="aws-session6"
+          s3_key="checkpoints/epoch-checkpoint.ckpt"
+          
           echo "Uploading $checkpoint_path to s3://$bucket_name/$s3_key"
+          
           if [ -f "$checkpoint_path" ]; then
-            sudo aws s3 cp "$checkpoint_path" "s3://$bucket_name/$s3_key"
+            # Use AWS CLI without sudo, with proper credentials
+            aws s3 cp "$checkpoint_path" "s3://$bucket_name/$s3_key"
           else
             echo "Error: Checkpoint file not found at $checkpoint_path"
-            # Add debugging information
             echo "Directory contents:"
-            sudo ls -la /home/ubuntu/emlo4-session-08-aws-session/model_storage/
+            ls -la /home/ubuntu/emlo4-session-08-aws-session/model_storage/
             exit 1
           fi
+
+      - name: Clean previous images and containers
+        run: |
+          docker system prune -f
+
+        
   
